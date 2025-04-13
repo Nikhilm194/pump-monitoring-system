@@ -1,0 +1,5 @@
+Copy
+flask
+flask-cors
+pymodbus
+requests
