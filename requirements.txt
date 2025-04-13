@@ -3,3 +3,6 @@ flask
 flask-cors
 pymodbus
 requests
+COMMANDS TO RUN
+pip install flask flask-cors requests pymodbus
+python app.py
