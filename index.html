@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Pump Monitoring</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .pump-card { margin: 10px; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .chart-container { margin: 20px auto; max-width: 800px; height: 400px; }
+        .button-group { display: flex; gap: 10px; justify-content: center; margin-top: 15px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="my-4">Pump Monitoring System</h1>
+        
+        <div class="row" id="pumps-container"></div>
+        
+        <div class="button-group">
+            <button class="btn btn-danger" onclick="resetAll()">Emergency Reset</button>
+            <button class="btn btn-warning" onclick="toggleAll()">Toggle All Pumps</button>
+        </div>
+
+        <div class="row">
+            <div class="col-md-6 chart-container">
+                <canvas id="dataChart"></canvas>
+            </div>
+            <div class="col-md-6 chart-container">
+                <canvas id="statusChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:5000/api';
+        let dataChart, statusChart;
+
+        function init() {
+            // Create pump cards with toggle switches
+            document.getElementById('pumps-container').innerHTML = 
+                [1,2,3].map(id => `
+                    <div class="col-md-4">
+                        <div class="pump-card bg-light">
+                            <h5>Pump ${id}</h5>
+                            <p>State: <span id="state-${id}" class="${id===1?'text-success':'text-danger'}">-</span></p>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" 
+                                       id="toggle-${id}" 
+                                       onchange="togglePump(${id})">
+                                <label class="form-check-label" for="toggle-${id}">Toggle Pump</label>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+
+            // Init data chart
+            dataChart = new Chart(document.getElementById('dataChart'), {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        { label: 'Water Pump', data: [], borderColor: '#4bc0c0', tension: 0.1 },
+                        { label: 'Lime Pump', data: [], borderColor: '#ff6384', tension: 0.1 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: { display: true, text: 'Pump Performance Metrics' }
+                    }
+                }
+            });
+
+            // Init status chart
+            statusChart = new Chart(document.getElementById('statusChart'), {
+                type: 'bar',
+                data: {
+                    labels: ['Pump 1', 'Pump 2', 'Pump 3'],
+                    datasets: [{
+                        label: 'Current Status',
+                        data: [0, 0, 0],
+                        backgroundColor: ['#4bc0c0', '#ff6384', '#cc65fe']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: { display: true, text: 'Pump Status Overview' }
+                    },
+                    scales: {
+                        y: { 
+                            max: 1,
+                            ticks: { 
+                                callback: value => value ? 'Active' : 'Inactive' 
+                            }
+                        }
+                    }
+                }
+            });
+
+            setInterval(updateData, 2000);
+            updateData();
+        }
+
+        async function updateData() {
+            try {
+                const [states, data] = await Promise.all([
+                    (await fetch(`${API_BASE}/device_states`)).json(),
+                    (await fetch(`${API_BASE}/pump_data`)).json()
+                ]);
+
+                // Update pump states and switches
+                [1,2,3].forEach(id => {
+                    const state = states[`Pump${id}`];
+                    document.getElementById(`state-${id}`).textContent = state === 1 ? 'Active' : 'Inactive';
+                    document.getElementById(`toggle-${id}`).checked = state === 1;
+                });
+
+                // Update line chart
+                dataChart.data.labels = data.timestamps;
+                dataChart.data.datasets[0].data = data.datasets[0].data;
+                dataChart.data.datasets[1].data = data.datasets[1].data;
+                dataChart.update();
+
+                // Update bar chart
+                statusChart.data.datasets[0].data = [states.Pump1, states.Pump2, states.Pump3];
+                statusChart.update();
+            } catch(e) { console.error('Update error:', e) }
+        }
+
+        async function togglePump(id) {
+            try { 
+                await fetch(`${API_BASE}/toggle/${id}`, { method: 'POST' });
+                // Add visual feedback
+                document.getElementById(`toggle-${id}`).disabled = true;
+                setTimeout(() => document.getElementById(`toggle-${id}`).disabled = false, 1000);
+            } 
+            catch(e) { console.error('Toggle error:', e) }
+        }
+
+        async function toggleAll() {
+            try {
+                await Promise.all([1,2,3].map(id => 
+                    fetch(`${API_BASE}/toggle/${id}`, { method: 'POST' })));
+            } catch(e) { console.error('Toggle all error:', e) }
+        }
+
+        async function resetAll() {
+            try { 
+                await fetch(`${API_BASE}/reset`, { method: 'POST' });
+                // Add visual feedback
+                const btn = document.querySelector('.btn-danger');
+                btn.classList.add('btn-active');
+                setTimeout(() => btn.classList.remove('btn-active'), 1000);
+            } 
+            catch(e) { console.error('Reset error:', e) }
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
